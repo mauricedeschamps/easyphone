@@ -5,16 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>簡単操作電話帳</title>
     
-    <!-- アイコン設定（ここが重要！） -->
+    <!-- アイコン設定 -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='white'/><circle cx='50' cy='35' r='20' stroke='%23FFCC00' stroke-width='8' fill='none'/><text x='50' y='60' font-size='16' text-anchor='middle' fill='black' font-family='Arial'>Easy</text><text x='50' y='80' font-size='16' text-anchor='middle' fill='black' font-family='Arial'>Phone</text></svg>">
-    
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='white'/><circle cx='50' cy='35' r='20' stroke='%23FFCC00' stroke-width='8' fill='none'/><text x='50' y='60' font-size='16' text-anchor='middle' fill='black' font-family='Arial'>Easy</text><text x='50' y='80' font-size='16' text-anchor='middle' fill='black' font-family='Arial'>Phone</text></svg>">
-    
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#0066CC">
     
-    <!-- ここから下は元のコードと同じ -->
     <style>
         * {
             margin: 0;
@@ -234,6 +231,11 @@
             color: white;
         }
         
+        .delete-btn {
+            background: #FF8800;
+            color: white;
+        }
+        
         .contact-selector {
             margin-bottom: 20px;
         }
@@ -270,6 +272,7 @@
             margin-bottom: 12px;
             box-shadow: 0 3px 10px rgba(0,0,0,0.1);
             font-size: 20px;
+            position: relative;
         }
         
         .contact-item-name {
@@ -281,6 +284,27 @@
         .contact-item-number {
             font-size: 18px;
             color: #666;
+        }
+        
+        .contact-item-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 8px;
+        }
+        
+        .edit-item-btn, .delete-item-btn {
+            background: #0066CC;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        
+        .delete-item-btn {
+            background: #FF4444;
         }
         
         .back-btn {
@@ -388,7 +412,7 @@
         <div class="modal-content">
             <div class="contact-selector">
                 <label for="contactCategory">カテゴリ</label>
-                <select id="contactCategory">
+                <select id="contactCategory" disabled>
                     <option value="1">家族</option>
                     <option value="2">友達</option>
                     <option value="3">仕事</option>
@@ -407,6 +431,7 @@
             <div class="modal-actions">
                 <button class="modal-btn cancel-btn" id="cancelBtn">キャンセル</button>
                 <button class="modal-btn save-btn" id="saveBtn">保存</button>
+                <button class="modal-btn delete-btn" id="deleteBtn" style="display:none;">削除</button>
             </div>
         </div>
     </div>
@@ -419,6 +444,7 @@
             speech: new (window.SpeechSynthesisUtterance || window.webkitSpeechSynthesisUtterance)(),
             touchTimer: null,
             editingContactId: null,
+            editingCategoryId: null,
             
             init() {
                 this.setupSpeech();
@@ -464,13 +490,26 @@
                         const contactItem = document.createElement('div');
                         contactItem.className = 'contact-item';
                         contactItem.dataset.id = index;
-                        contactItem.dataset.category = categoryId;
                         contactItem.innerHTML = `
                             <div class="contact-item-name">${contact.name}</div>
                             <div class="contact-item-number">${contact.number}</div>
+                            <div class="contact-item-actions">
+                                <button class="edit-item-btn">編集</button>
+                                <button class="delete-item-btn">削除</button>
+                            </div>
                         `;
                         
-                        contactItem.addEventListener('click', () => this.handleContactItemClick(categoryId, index));
+                        // 電話発信用のクリックイベント
+                        contactItem.addEventListener('click', (e) => {
+                            if (e.target.classList.contains('edit-item-btn') {
+                                this.openEditContactModal(categoryId, index);
+                            } else if (e.target.classList.contains('delete-item-btn')) {
+                                this.deleteContact(categoryId, index);
+                            } else {
+                                this.handleContactItemClick(categoryId, index);
+                            }
+                        });
+                        
                         contactsContainer.appendChild(contactItem);
                     });
                 } else {
@@ -496,6 +535,7 @@
                 
                 document.getElementById('saveBtn').addEventListener('click', () => this.saveContact());
                 document.getElementById('cancelBtn').addEventListener('click', () => this.closeEditModal());
+                document.getElementById('deleteBtn').addEventListener('click', () => this.confirmDeleteContact());
             },
             
             showCategoryContacts(categoryId) {
@@ -512,7 +552,7 @@
                 document.getElementById(`category-${categoryId}`).classList.remove('active');
                 
                 const categoryName = document.getElementById(`name-${categoryId}`).textContent;
-                this.speak(`${categoryName}カテゴリに戻りました`);
+                this.speak(`${categoryName}カ��ゴリに戻りました`);
             },
             
             handleContactItemClick(categoryId, contactIndex) {
@@ -538,13 +578,35 @@
             openAddContactModal(categoryId = null) {
                 if (categoryId) {
                     document.getElementById('contactCategory').value = categoryId;
+                } else {
+                    document.getElementById('contactCategory').disabled = false;
                 }
                 
                 document.getElementById('editName').value = '';
                 document.getElementById('editNumber').value = '';
                 this.editingContactId = null;
+                this.editingCategoryId = null;
+                document.getElementById('deleteBtn').style.display = 'none';
                 document.getElementById('editModal').style.display = 'flex';
                 this.speak('新しい連絡先を追加します');
+            },
+            
+            openEditContactModal(categoryId, contactIndex) {
+                const savedContacts = localStorage.getItem(`simple_phonebook_${categoryId}`);
+                if (savedContacts) {
+                    const contacts = JSON.parse(savedContacts);
+                    const contact = contacts[contactIndex];
+                    
+                    document.getElementById('contactCategory').value = categoryId;
+                    document.getElementById('contactCategory').disabled = true;
+                    document.getElementById('editName').value = contact.name;
+                    document.getElementById('editNumber').value = contact.number;
+                    this.editingContactId = contactIndex;
+                    this.editingCategoryId = categoryId;
+                    document.getElementById('deleteBtn').style.display = 'block';
+                    document.getElementById('editModal').style.display = 'flex';
+                    this.speak(`${contact.name}を編集します`);
+                }
             },
             
             saveContact() {
@@ -574,18 +636,49 @@
                 const savedContacts = localStorage.getItem(storageKey);
                 let contacts = savedContacts ? JSON.parse(savedContacts) : [];
                 
-                if (this.editingContactId !== null) {
+                if (this.editingContactId !== null && this.editingCategoryId === categoryId) {
+                    // 既存連絡先の編集
                     contacts[this.editingContactId] = contactData;
+                    this.speak(`${name}の情報を更新しました`);
                 } else {
+                    // 新規連絡先の追加
                     contacts.push(contactData);
+                    this.speak(`${name}を追加しました`);
                 }
                 
                 localStorage.setItem(storageKey, JSON.stringify(contacts));
                 this.loadContactsForCategory(categoryId);
                 this.closeEditModal();
-                
-                const categoryName = document.getElementById(`name-${categoryId}`).textContent;
-                this.speak(`${categoryName}に${name}を保存しました`);
+            },
+            
+            deleteContact(categoryId, contactIndex) {
+                const savedContacts = localStorage.getItem(`simple_phonebook_${categoryId}`);
+                if (savedContacts) {
+                    const contacts = JSON.parse(savedContacts);
+                    const contactName = contacts[contactIndex].name;
+                    
+                    if (confirm(`${contactName}を削除しますか？`)) {
+                        contacts.splice(contactIndex, 1);
+                        localStorage.setItem(`simple_phonebook_${categoryId}`, JSON.stringify(contacts));
+                        this.loadContactsForCategory(categoryId);
+                        this.speak(`${contactName}を削除しました`);
+                    }
+                }
+            },
+            
+            confirmDeleteContact() {
+                if (this.editingContactId !== null && this.editingCategoryId !== null) {
+                    const categoryId = this.editingCategoryId;
+                    const contactIndex = this.editingContactId;
+                    const savedContacts = localStorage.getItem(`simple_phonebook_${categoryId}`);
+                    
+                    if (savedContacts) {
+                        const contacts = JSON.parse(savedContacts);
+                        const contactName = contacts[contactIndex].name;
+                        this.deleteContact(categoryId, contactIndex);
+                        this.closeEditModal();
+                    }
+                }
             },
             
             updateCategoryDisplay(categoryId, name, number, color) {
