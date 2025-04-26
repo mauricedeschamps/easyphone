@@ -233,6 +233,11 @@
             color: white;
         }
         
+        .delete-btn {
+            background: #FF4444;
+            color: white;
+        }
+        
         .contact-selector {
             margin-bottom: 20px;
         }
@@ -269,6 +274,7 @@
             margin-bottom: 12px;
             box-shadow: 0 3px 10px rgba(0,0,0,0.1);
             font-size: 20px;
+            position: relative;
         }
         
         .contact-item-name {
@@ -311,6 +317,22 @@
             font-size: 18px;
             color: #666;
             padding: 20px;
+        }
+        
+        .edit-actions {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .edit-action-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -407,6 +429,9 @@
                 <button class="modal-btn cancel-btn" id="cancelBtn">キャンセル</button>
                 <button class="modal-btn save-btn" id="saveBtn">保存</button>
             </div>
+            <div id="deleteBtnContainer" style="display: none;">
+                <button class="modal-btn delete-btn" id="deleteBtn">削除</button>
+            </div>
         </div>
     </div>
 
@@ -418,6 +443,7 @@
             speech: new (window.SpeechSynthesisUtterance || window.webkitSpeechSynthesisUtterance)(),
             touchTimer: null,
             editingContactId: null,
+            editingContactCategory: null,
             
             init() {
                 this.setupSpeech();
@@ -469,7 +495,24 @@
                             <div class="contact-item-number">${contact.number}</div>
                         `;
                         
-                        contactItem.addEventListener('click', () => this.handleContactItemClick(categoryId, index));
+                        // タップイベント（電話発信）
+                        contactItem.addEventListener('click', (e) => {
+                            // 編集ボタンが表示されている場合は発信しない
+                            if (e.target.classList.contains('edit-action-btn')) return;
+                            this.handleContactItemClick(categoryId, index);
+                        });
+                        
+                        // 長押しイベント（編集モード）
+                        contactItem.addEventListener('touchstart', (e) => {
+                            this.touchTimer = setTimeout(() => {
+                                this.openEditContactModal(categoryId, index);
+                            }, 1000);
+                        }, {passive: true});
+                        
+                        contactItem.addEventListener('touchend', () => {
+                            clearTimeout(this.touchTimer);
+                        }, {passive: true});
+                        
                         contactsContainer.appendChild(contactItem);
                     });
                 } else {
@@ -495,6 +538,7 @@
                 
                 document.getElementById('saveBtn').addEventListener('click', () => this.saveContact());
                 document.getElementById('cancelBtn').addEventListener('click', () => this.closeEditModal());
+                document.getElementById('deleteBtn').addEventListener('click', () => this.deleteContact());
             },
             
             showCategoryContacts(categoryId) {
@@ -542,8 +586,27 @@
                 document.getElementById('editName').value = '';
                 document.getElementById('editNumber').value = '';
                 this.editingContactId = null;
+                this.editingContactCategory = null;
+                document.getElementById('deleteBtnContainer').style.display = 'none';
                 document.getElementById('editModal').style.display = 'flex';
                 this.speak('新しい連絡先を追加します');
+            },
+            
+            openEditContactModal(categoryId, contactIndex) {
+                const savedContacts = localStorage.getItem(`simple_phonebook_${categoryId}`);
+                if (savedContacts) {
+                    const contacts = JSON.parse(savedContacts);
+                    const contact = contacts[contactIndex];
+                    
+                    document.getElementById('contactCategory').value = categoryId;
+                    document.getElementById('editName').value = contact.name;
+                    document.getElementById('editNumber').value = contact.number;
+                    this.editingContactId = contactIndex;
+                    this.editingContactCategory = categoryId;
+                    document.getElementById('deleteBtnContainer').style.display = 'block';
+                    document.getElementById('editModal').style.display = 'flex';
+                    this.speak(`${contact.name}を編集します`);
+                }
             },
             
             saveContact() {
@@ -573,9 +636,20 @@
                 const savedContacts = localStorage.getItem(storageKey);
                 let contacts = savedContacts ? JSON.parse(savedContacts) : [];
                 
-                if (this.editingContactId !== null) {
+                if (this.editingContactId !== null && this.editingContactCategory === categoryId) {
+                    // 同じカテゴリ内での編集
                     contacts[this.editingContactId] = contactData;
+                } else if (this.editingContactId !== null) {
+                    // カテゴリを変更した場合、元のカテゴリから削除して新しいカテゴリに追加
+                    const oldStorageKey = `simple_phonebook_${this.editingContactCategory}`;
+                    const oldContacts = JSON.parse(localStorage.getItem(oldStorageKey));
+                    oldContacts.splice(this.editingContactId, 1);
+                    localStorage.setItem(oldStorageKey, JSON.stringify(oldContacts));
+                    
+                    contacts.push(contactData);
+                    this.loadContactsForCategory(this.editingContactCategory);
                 } else {
+                    // 新規追加
                     contacts.push(contactData);
                 }
                 
@@ -585,6 +659,25 @@
                 
                 const categoryName = document.getElementById(`name-${categoryId}`).textContent;
                 this.speak(`${categoryName}に${name}を保存しました`);
+            },
+            
+            deleteContact() {
+                if (this.editingContactId === null || this.editingContactCategory === null) return;
+                
+                const storageKey = `simple_phonebook_${this.editingContactCategory}`;
+                const savedContacts = localStorage.getItem(storageKey);
+                
+                if (savedContacts) {
+                    const contacts = JSON.parse(savedContacts);
+                    const contactName = contacts[this.editingContactId].name;
+                    
+                    contacts.splice(this.editingContactId, 1);
+                    localStorage.setItem(storageKey, JSON.stringify(contacts));
+                    
+                    this.loadContactsForCategory(this.editingContactCategory);
+                    this.closeEditModal();
+                    this.speak(`${contactName}を削除しました`);
+                }
             },
             
             updateCategoryDisplay(categoryId, name, number, color) {
@@ -623,7 +716,7 @@
             
             announceReady() {
                 setTimeout(() => {
-                    this.speak('簡単操作電話帳の準備ができました。家族、友達、仕事、その他のボタンから選んでください。連絡先をタップすると電話をかけます。編集ボタンから新しい連絡先を追加できます。');
+                    this.speak('簡単操作電話帳の準備ができました。家族、友達、仕事、その他のボタンから選んでください。連絡先をタップすると電話をかけます。連絡先を長押しすると編集できます。編集ボタンから新しい連絡先を追加できます。');
                 }, 800);
             }
         };
@@ -634,4 +727,3 @@
     </script>
 </body>
 </html>
-
